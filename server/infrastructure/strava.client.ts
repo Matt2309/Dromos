@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 
 const STRAVA_API_BASE = "https://www.strava.com/api/v3";
+const STRAVA_REQUEST_TIMEOUT_MS = 10_000;
 
 export class StravaClientError extends Error {
 	constructor(
@@ -47,12 +48,16 @@ async function getAccessTokenForUser(userId: string): Promise<string> {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: refreshBody.toString(),
+        signal: AbortSignal.timeout(STRAVA_REQUEST_TIMEOUT_MS),
     });
 
     // 2. Gestione errori migliorata per il debugging
     if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Strava refresh error for user ${userId}:`, errorText);
+        // Status only: the response body is Strava's, not ours to log, and
+        // can echo parts of the refresh request.
+        console.error(
+            `Strava refresh error for user ${userId}: ${response.status}`,
+        );
 
         throw new StravaClientError("Failed to refresh Strava token", 401);
     }
@@ -95,9 +100,8 @@ export async function fetchStravaForUser<T = unknown>(
 		const accessToken = await getAccessTokenForUser(userId);
 		const response = await fetch(`${STRAVA_API_BASE}/${path}`, {
 			headers: { Authorization: `Bearer ${accessToken}` },
+			signal: AbortSignal.timeout(STRAVA_REQUEST_TIMEOUT_MS),
 		});
-
-		const data = (await response.json()) as T;
 
 		if (!response.ok) {
 			return {
@@ -107,14 +111,20 @@ export async function fetchStravaForUser<T = unknown>(
 			};
 		}
 
+		const data = (await response.json()) as T;
+
 		return { ok: true, statusCode: response.status, data };
 	} catch (error) {
 		if (error instanceof StravaClientError) {
 			return { ok: false, statusCode: error.statusCode, error: error.message };
 		}
-		const errorMessage =
-			error instanceof Error ? error.message : "Unknown error";
-		return { ok: false, statusCode: 500, error: errorMessage };
+		// Generic message: it reaches the client through StravaClientError, so
+		// network/driver error details must not leak into it.
+		console.error(
+			`Strava request failed for user ${userId}:`,
+			error instanceof Error ? error.name : "unknown",
+		);
+		return { ok: false, statusCode: 502, error: "Strava request failed" };
 	}
 }
 
@@ -157,6 +167,7 @@ export async function deauthorizeStrava(userId: string): Promise<boolean> {
 		const response = await fetch("https://www.strava.com/oauth/deauthorize", {
 			method: "POST",
 			headers: { Authorization: `Bearer ${accessToken}` },
+			signal: AbortSignal.timeout(STRAVA_REQUEST_TIMEOUT_MS),
 		});
 
 		if (!response.ok) {
@@ -168,7 +179,10 @@ export async function deauthorizeStrava(userId: string): Promise<boolean> {
 
 		return true;
 	} catch (error) {
-		console.error(`Strava deauthorize error for user ${userId}:`, error);
+		console.error(
+			`Strava deauthorize error for user ${userId}:`,
+			error instanceof Error ? error.name : "unknown",
+		);
 		return false;
 	}
 }

@@ -5,7 +5,7 @@ services:
       context: ../
       dockerfile: docker/Dockerfile.dev
       args:
-        - NODE_VERSION=${NODE_VERSION:-22}
+        - NODE_VERSION=${NODE_VERSION:-22.23.4}
     container_name: dromos-dev
     restart: unless-stopped
     ports:

@@ -12,9 +12,22 @@ import {
 	deliverVerificationEmail,
 } from "@/server/services/email.service";
 
+const baseURL = process.env.BETTER_AUTH_URL;
+
 export const auth = betterAuth({
 	secret: process.env.BETTER_AUTH_SECRET,
-	baseURL: process.env.BETTER_AUTH_URL,
+	baseURL,
+	// Explicit allowlist for the Origin/Referer CSRF check and redirect
+	// targets (callbackURL etc.). Same value better-auth derives from baseURL;
+	// spelled out so it can't silently widen.
+	trustedOrigins: baseURL ? [baseURL] : [],
+	session: {
+		// Same as better-auth's defaults, pinned so an upstream change can't
+		// lengthen session lifetime unnoticed. Do NOT enable `cookieCache`
+		// here (see CLAUDE.md § Email verification).
+		expiresIn: 60 * 60 * 24 * 7, // 7 days
+		updateAge: 60 * 60 * 24, // refresh the expiry once a day
+	},
 	database: prismaAdapter(prisma, {
 		provider: "postgresql",
 	}),
@@ -85,6 +98,15 @@ export const auth = betterAuth({
 		},
 	},
 	advanced: {
+		// `Secure` on every auth cookie whenever the app is served over https.
+		// HttpOnly + SameSite=Lax are better-auth's defaults, pinned here:
+		// `strict` would drop the cookie on the top-level redirect back from
+		// Google/Strava and break OAuth sign-in.
+		useSecureCookies: baseURL?.startsWith("https://") ?? false,
+		defaultCookieAttributes: {
+			httpOnly: true,
+			sameSite: "lax",
+		},
 		ipAddress: {
 			// Deploy chain: client -> Cloudflare -> reverse proxy -> container.
 			// `cf-connecting-ip` is set by Cloudflare and can't be spoofed by the
@@ -316,6 +338,7 @@ export const auth = betterAuth({
 								headers: {
 									Authorization: `Bearer ${tokens.accessToken}`,
 								},
+								signal: AbortSignal.timeout(10_000),
 							},
 						);
 
