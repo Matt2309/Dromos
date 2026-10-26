@@ -63,12 +63,17 @@ export async function findActivityByStravaId(stravaId: string) {
 }
 
 /**
- * Delete an activity by its Strava ID.
+ * Delete an activity by its Strava ID, scoped to its owner: the Strava ID
+ * alone is not proof of ownership (webhook payloads are unsigned), so an
+ * activity belonging to another user is never touched.
  * Returns the deleted record so callers can adjust statistics, or null if not found.
  */
-export async function deleteActivityByStravaId(stravaId: string) {
+export async function deleteActivityByStravaId(
+	stravaId: string,
+	userId: string,
+) {
 	try {
-		return await prisma.activity.delete({ where: { stravaId } });
+		return await prisma.activity.delete({ where: { stravaId, userId } });
 	} catch {
 		return null;
 	}
