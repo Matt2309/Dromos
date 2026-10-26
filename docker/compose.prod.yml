@@ -16,7 +16,7 @@ services:
       # Database and OAuth secrets - use docker secrets in production swarm
       # or mount from secure source (AWS Secrets Manager, HashiCorp Vault, etc.)
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/login"]
       interval: 30s
       timeout: 3s
       retries: 3
