@@ -4,7 +4,7 @@ services:
     build:
       context: ../
       dockerfile: docker/Dockerfile.prod
-      platforms: [linux/arm64]
+      platforms: ["linux/amd64"]
     container_name: dromos
     ports:
       - '3000:3000'
