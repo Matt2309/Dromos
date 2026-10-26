@@ -90,15 +90,18 @@ export async function sendEmail(
 		});
 
 		if (!response.ok) {
-			const errorBody = await response.text();
-			// Never log input.to here — only the domain is safe to print
-			// (data-minimization stance already taken in lib/rate-limit.ts).
+			// Status only: Resend's error body can echo the recipient address,
+			// and only the domain is safe to print (data-minimization stance
+			// already taken in lib/rate-limit.ts).
 			const domain = input.to.split("@")[1] ?? "unknown";
 			console.error(
-				`[Email] Resend request failed (${response.status}) for *@${domain}:`,
-				errorBody,
+				`[Email] Resend request failed (${response.status}) for *@${domain}`,
 			);
-			return { ok: false, statusCode: response.status, error: errorBody };
+			return {
+				ok: false,
+				statusCode: response.status,
+				error: `Resend request failed (${response.status})`,
+			};
 		}
 
 		const data = (await response.json()) as { id?: string };

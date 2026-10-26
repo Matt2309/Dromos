@@ -7,6 +7,8 @@ import { appRouter } from "@/routers";
 const handler = new RPCHandler(appRouter);
 
 const RPC_RATE_LIMIT_MAX = 500;
+// Looser than the per-session cap: one IP can legitimately carry several users.
+const RPC_RATE_LIMIT_MAX_PER_IP = 1500;
 const RPC_RATE_LIMIT_WINDOW_SECONDS = 60;
 
 /**
@@ -18,24 +20,29 @@ const RPC_RATE_LIMIT_WINDOW_SECONDS = 60;
  * components (lib/orpc/server.ts) never go through here, so internal
  * rendering never consumes a client's quota.
  */
-function rateLimitKey(request: Request): string | null {
-	// Prefer the session cookie so the bucket is per-user, not per-IP (several
-	// users can share one IP behind Cloudflare/NAT). Hash it so the raw
-	// session token never sits in memory.
+function sessionBucketKey(request: Request): string | null {
 	const cookie = getSessionCookie(request);
-	if (cookie)
-		return `sess:${createHash("sha256").update(cookie).digest("hex")}`;
-
-	const ip = getClientIp(request);
-	return ip ? `ip:${ip}` : null;
+	return cookie
+		? `sess:${createHash("sha256").update(cookie).digest("hex")}`
+		: null;
 }
 
 const handleRequest = async (request: Request) => {
-	const key = rateLimitKey(request);
-	if (key) {
+	// The session cookie is NOT verified here, so a per-session bucket alone
+	// can be dodged by sending a different junk cookie on every request. The
+	// per-IP bucket is therefore always charged too; the per-session bucket
+	// just keeps users behind a shared IP (Cloudflare/NAT) from starving each
+	// other. A key of null means neither exists — no bucket to charge, same
+	// trade-off better-auth makes (see get-request-ip.mjs).
+	const ip = getClientIp(request);
+	const keys = [sessionBucketKey(request), ip ? `ip:${ip}` : null].filter(
+		(key): key is string => key !== null,
+	);
+
+	for (const key of keys) {
 		const { allowed, retryAfter } = consumeRateLimit(
 			key,
-			RPC_RATE_LIMIT_MAX,
+			key.startsWith("ip:") ? RPC_RATE_LIMIT_MAX_PER_IP : RPC_RATE_LIMIT_MAX,
 			RPC_RATE_LIMIT_WINDOW_SECONDS,
 		);
 		if (!allowed) {
@@ -51,8 +58,6 @@ const handleRequest = async (request: Request) => {
 			);
 		}
 	}
-	// key === null: neither a session cookie nor a resolvable IP — no bucket
-	// to charge, same trade-off better-auth makes (see get-request-ip.mjs).
 
 	const { response } = await handler.handle(request, {
 		prefix: "/api/rpc",
