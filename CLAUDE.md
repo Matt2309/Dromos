@@ -72,14 +72,20 @@ Route access levels (`RouteAccess.PUBLIC/PROTECTED/PRIVATE`) are defined in `lib
 
 - **`/api/auth/[...all]`** — better-auth handler (email/password, Google OAuth, Strava OAuth via `genericOAuth` plugin)
 - **`/api/rpc/[[...rest]]`** — oRPC endpoint. All application data operations go through here. Routers are composed in `routers/index.ts` (`strava.*`, `compliance.*`).
-- **`/api/strava/webhook`** — Strava push notifications (create / update / delete activity events)
+- **`/api/strava/webhook`** — Strava push notifications (create / update / delete activity events). Payloads are unsigned, so every write is scoped to the event owner: delete filters by `{ stravaId, userId }`, `persistStravaActivity` refuses to overwrite a row owned by another user, and `subscription_id` is checked against `STRAVA_WEBHOOK_SUBSCRIPTION_ID` when set (skipped with a warning when unset).
 - **`/api/cron/purge-raw-data`** — GDPR retention purge (`GET`, requires `Authorization: Bearer CRON_SECRET`). Runs `purgeStaleActivityData()` and `purgeStaleAuditLogs()`, invoked nightly by the `.github/workflows/purge-raw-data.yml` scheduled workflow.
+
+**Proxy (`proxy.ts`)**: the `config.matcher` must never contain an empty alternative (`a||b`) — it makes the negative lookahead fail on every path and silently disables the proxy (this happened before). `api/auth`, `api/rpc`, `api/cron` and the exact webhook path are excluded by the matcher; the in-function bypasses for webhook/cron compare the pathname with `===`, never `startsWith`.
+
+**Security headers**: `next.config.ts` sets CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options` and `Permissions-Policy`, and disables `X-Powered-By`. The CSP allowlists only what the app loads (GTM, GA, Cookiebot); anything new that GTM starts loading must be added there. `script-src` keeps `'unsafe-inline'` for the consent-mode snippet in `app/layout.tsx` (nonces would make every page dynamic).
 
 oRPC procedures can be called directly from server components as plain async functions (bypassing HTTP), e.g. `await isStravaConnected({ userId })` in the layout.
 
 **Rate limiting**: `/api/auth/*` is covered by better-auth's built-in rate limiter (configured in `lib/auth.ts` — `rateLimit` + `advanced.ipAddress`), using a bounded in-memory store (`authRateLimitStorage` in `lib/rate-limit.ts`) passed as `rateLimit.customStorage` instead of the default `"memory"` storage — the default has no cap and never evicts a key unless it's read again after expiry. `/api/rpc` sits outside that perimeter, so it has its own bounded limiter (`consumeRateLimit` in `lib/rate-limit.ts`) applied directly in `app/api/rpc/[[...rest]]/route.ts`, not as an oRPC middleware — a middleware would also fire on the server-side `.callable()` invocations above, which have no real client IP/session to key on. `/api/strava/webhook` and `/api/cron/purge-raw-data` are not rate-limited. `rateLimit.customRules` also pins tight limits on every email-sending and 2FA-verification endpoint (`/request-password-reset`, `/send-verification-email`, `/reset-password`, `/verify-email`, `/two-factor/*`) — see Auth § Email verification / § 2FA below. The rate-limit key is always `ip + path`, never per-account.
 
 ### Auth
+
+**better-auth is pinned to `~1.6.x`**: 1.7 removes `genericOAuthClient`, which `lib/auth-client.ts`, `LoginForm` and `ConnectStrava` rely on (`authClient.signIn.oauth2` / `authClient.oauth2.link`). Moving to 1.7 means reworking that client flow.
 
 `lib/auth.ts` — server-side better-auth instance. `lib/auth-client.ts` — client-side `createAuthClient` (use the exported `signIn`, `signUp`, `signOut`, `useSession` from there in client components).
 
@@ -170,4 +176,4 @@ Client-side queries use `@orpc/tanstack-query`. The query client is configured i
 | `.env.stg.local` | Staging DB scripts |
 | `.env.production.local` | Production Docker build and DB scripts |
 
-Required variables: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `NEXT_PUBLIC_BETTER_AUTH_URL`, `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_WEBHOOK_VERIFY_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `CRON_SECRET`, `ENCRYPTION_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`. See `.env.example`. `RESEND_API_KEY` may be left empty in local dev — see Auth § Transactional email.
+Required variables: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `NEXT_PUBLIC_BETTER_AUTH_URL`, `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_WEBHOOK_VERIFY_TOKEN`, `STRAVA_WEBHOOK_SUBSCRIPTION_ID` (recommended), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `CRON_SECRET`, `ENCRYPTION_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`. See `.env.example`. `RESEND_API_KEY` may be left empty in local dev — see Auth § Transactional email.
