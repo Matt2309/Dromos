@@ -3,7 +3,8 @@ import type { NextConfig } from "next";
 const isProd = process.env.NODE_ENV === "production";
 
 // Third parties the app really loads: Google Tag Manager (app/layout.tsx),
-// which in turn loads GA4 and the Cookiebot consent banner, plus the
+// which in turn loads GA4 and the CookieYes consent banner (Cookiebot is
+// still allowlisted until the container is confirmed free of it), plus the
 // Cloudflare Web Analytics beacon. Anything GTM
 // starts loading later has to be added here, or the browser will block it.
 const GTM_SCRIPT_SRC = [
@@ -11,6 +12,8 @@ const GTM_SCRIPT_SRC = [
 	"https://*.google-analytics.com",
 	"https://consent.cookiebot.com",
 	"https://consentcdn.cookiebot.com",
+	// CookieYes consent banner, loaded by a tag inside the GTM container.
+	"https://cdn-cookieyes.com",
 	// Cloudflare Web Analytics beacon, injected by Cloudflare at the edge.
 	"https://static.cloudflareinsights.com",
 ];
@@ -20,6 +23,9 @@ const GTM_CONNECT_SRC = [
 	"https://*.analytics.google.com",
 	"https://consent.cookiebot.com",
 	"https://consentcdn.cookiebot.com",
+	"https://cdn-cookieyes.com",
+	// CookieYes logs the visitor's consent choice here.
+	"https://log.cookieyes.com",
 	"https://cloudflareinsights.com",
 ];
 
