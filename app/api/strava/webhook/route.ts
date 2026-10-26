@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { secureCompare } from "@/lib/secure-compare";
 import {
 	processWebhookEvent,
 	webhookEventSchema,
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 		parsed.data;
 
 	const expectedToken = process.env.STRAVA_WEBHOOK_VERIFY_TOKEN;
-	if (!expectedToken || verifyToken !== expectedToken) {
+	if (!expectedToken || !secureCompare(verifyToken, expectedToken)) {
 		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
@@ -48,6 +49,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 	const parsed = webhookEventSchema.safeParse(body);
 	if (!parsed.success) {
 		return NextResponse.json({ received: true }, { status: 200 });
+	}
+
+	// Strava does not sign webhook payloads, so the only thing tying an event
+	// to our subscription is its id. When STRAVA_WEBHOOK_SUBSCRIPTION_ID is
+	// not configured the check is skipped (with a warning) rather than
+	// silently dropping every event; ownership is enforced downstream anyway
+	// (events are re-fetched with the owner's own token and writes are scoped
+	// by userId).
+	const expectedSubscriptionId = process.env.STRAVA_WEBHOOK_SUBSCRIPTION_ID;
+	if (expectedSubscriptionId) {
+		if (String(parsed.data.subscription_id) !== expectedSubscriptionId) {
+			return NextResponse.json({ received: true }, { status: 200 });
+		}
+	} else {
+		console.warn(
+			"[Strava Webhook] STRAVA_WEBHOOK_SUBSCRIPTION_ID is not set — subscription_id is not being validated",
+		);
 	}
 
 	// Await processing so the runtime does not drop the work after response.

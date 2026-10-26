@@ -1,4 +1,4 @@
-import { os } from "@orpc/server";
+import { ORPCError, os } from "@orpc/server";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { errorHandlerMiddleware } from "@/routers/middlewares/error-handler";
@@ -7,7 +7,7 @@ import { getTwoFactorStatus } from "@/server/services/security.service";
 async function getUserIdFromSession(): Promise<string> {
 	const session = await auth.api.getSession({ headers: await headers() });
 	if (!session?.user?.id) {
-		throw new Error("Unauthorized: No active session");
+		throw new ORPCError("UNAUTHORIZED");
 	}
 	return session.user.id;
 }

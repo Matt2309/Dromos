@@ -1,4 +1,4 @@
-import { os } from "@orpc/server";
+import { ORPCError, os } from "@orpc/server";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
@@ -18,7 +18,7 @@ import {
 async function getUserIdFromSession(): Promise<string> {
 	const session = await auth.api.getSession({ headers: await headers() });
 	if (!session?.user?.id) {
-		throw new Error("Unauthorized: No active session");
+		throw new ORPCError("UNAUTHORIZED");
 	}
 	return session.user.id;
 }
@@ -31,10 +31,15 @@ export const getActivities = os
 	.use(errorHandlerMiddleware)
 	.callable();
 
+// Strava activity ids are numeric. The id is interpolated into a Strava API
+// path (`activities/${id}`), so anything else (e.g. `../athlete`) must be
+// rejected before it gets there.
+const stravaActivityIdSchema = z.string().regex(/^\d{1,20}$/);
+
 export const getActivity = os
 	.input(
 		z.object({
-			id: z.string(),
+			id: stravaActivityIdSchema,
 		}),
 	)
 	.handler(async ({ input }) => {
@@ -47,7 +52,7 @@ export const getActivity = os
 export const exportToToon = os
 	.input(
 		z.object({
-			id: z.string(),
+			id: stravaActivityIdSchema,
 		}),
 	)
 	.handler(async ({ input }) => {

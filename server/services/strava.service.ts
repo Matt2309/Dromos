@@ -301,11 +301,14 @@ async function persistStravaActivity(
 	const { sportName: newSportName, terrainType: newTerrainType } =
 		categorizeSportType(activity.sport_type);
 
+	let ownedByAnotherUser = false;
+
 	await prisma.$transaction(async (tx) => {
 		// 1. Check if activity already exists
 		const existing = await tx.activity.findUnique({
 			where: { stravaId },
 			select: {
+				userId: true,
 				distance: true,
 				movingTime: true,
 				totalElevationGain: true,
@@ -313,6 +316,12 @@ async function persistStravaActivity(
 				startDate: true,
 			},
 		});
+
+		// Never overwrite (or re-attribute statistics to) a row owned by someone else.
+		if (existing && existing.userId !== userId) {
+			ownedByAnotherUser = true;
+			return;
+		}
 
 		// 2. Upsert the activity record
 		await tx.activity.upsert({
@@ -411,6 +420,8 @@ async function persistStravaActivity(
 			}
 		}
 	});
+
+	if (ownedByAnotherUser) return;
 
 	// Update gear distance if activity has associated gear (outside transaction for simplicity)
 	if (activity.gear) {
@@ -528,7 +539,7 @@ async function handleWebhookDelete(
 	userId: string,
 	stravaActivityId: string,
 ): Promise<void> {
-	const deleted = await deleteActivityByStravaId(stravaActivityId);
+	const deleted = await deleteActivityByStravaId(stravaActivityId, userId);
 	if (!deleted) return; // was not in our DB — nothing to subtract
 
 	const { sportName, terrainType } = categorizeSportType(deleted.sportType);

@@ -1,5 +1,5 @@
-import { timingSafeEqual } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
+import { secureCompare } from "@/lib/secure-compare";
 import {
 	purgeStaleActivityData,
 	purgeStaleAuditLogs,
@@ -10,21 +10,6 @@ export const dynamic = "force-dynamic";
 // ---------------------------------------------------------------------------
 // GET — Nightly GDPR retention purge (triggered by a scheduled GitHub Action)
 // ---------------------------------------------------------------------------
-
-/**
- * Compares two secrets in constant time to avoid leaking their length/content
- * via response-time differences.
- */
-function isValidToken(provided: string, expected: string): boolean {
-	const providedBuffer = Buffer.from(provided);
-	const expectedBuffer = Buffer.from(expected);
-
-	if (providedBuffer.length !== expectedBuffer.length) {
-		return false;
-	}
-
-	return timingSafeEqual(providedBuffer, expectedBuffer);
-}
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
 	const cronSecret = process.env.CRON_SECRET;
@@ -39,7 +24,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 	const authHeader = request.headers.get("authorization") ?? "";
 	const [scheme, token] = authHeader.split(" ");
 
-	if (scheme !== "Bearer" || !token || !isValidToken(token, cronSecret)) {
+	if (scheme !== "Bearer" || !token || !secureCompare(token, cronSecret)) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 

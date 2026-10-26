@@ -1,4 +1,4 @@
-ARG NODE_VERSION=22
+ARG NODE_VERSION=22.23.4
 
 # ============================================================================
 # Base Stage: Common setup for all subsequent stages
@@ -10,10 +10,16 @@ FROM node:${NODE_VERSION}-alpine AS base
 # - openssl3: required by Prisma for secure (SSL/TLS) database connections (use v3 for Alpine 22)
 # - libc6-compat: needed by binary dependencies on musl/Alpine systems
 
-RUN apk add --no-cache bash openssl3 libc6-compat
+# `apk upgrade` pulls in Alpine security patches published after the base
+# image was built (build with `--pull --no-cache` so this layer is not reused).
+RUN apk upgrade --no-cache && \
+    apk add --no-cache bash openssl3 libc6-compat
 
-# Enable Corepack globally (once per base, not redundantly in each stage)
-RUN npm install -g corepack@latest && corepack enable
+# Enable Corepack globally (once per base, not redundantly in each stage) and
+# pin pnpm to the version in package.json instead of whatever is "latest".
+RUN npm install -g corepack@latest && \
+    corepack enable && \
+    corepack prepare pnpm@10.33.0 --activate
 
 WORKDIR /app
 
@@ -77,6 +83,17 @@ FROM node:${NODE_VERSION}-alpine AS runner
 # Set runtime environment variables
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# Docker sets HOSTNAME to the container id, which standalone server.js would
+# bind to; listen on all interfaces so localhost (healthcheck) works too.
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+# Alpine security patches, and drop the package managers: the app runs
+# `node server.js` only, so npm/npx/corepack/yarn are attack surface at best.
+RUN apk upgrade --no-cache && \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+           /opt/yarn-* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 
 # Security: Create a non-root user to run the application
 # Prevents privilege escalation attacks
@@ -90,19 +107,19 @@ WORKDIR /app
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Copy public directory if it exists (optional for projects without static assets)
-RUN if [ -d /app/public ]; then \
-      cp -r /app/public ./public; \
-      chown -R nextjs:nodejs ./public; \
-    fi
+# The project has no public/ directory. If one is added, copy it here:
+#   COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 # Switch to non-root user before running the app
 USER nextjs
 
-# Health check: allows orchestrators to detect when the app is ready
-# Adjust timeout based on your app's startup time
+EXPOSE 3000
+
+# Health check: allows orchestrators to detect when the app is ready.
+# /login (not /): "/" answers a 307 redirect for signed-out visitors, and
+# http.get does not follow redirects.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3000', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+    CMD node -e "require('http').get('http://localhost:3000/login', {timeout: 2500}, (r) => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1)).on('timeout', () => process.exit(1))"
 
 # Start the application
 # Use node server.js directly (from standalone) instead of npm start

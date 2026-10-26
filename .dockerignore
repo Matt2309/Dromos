@@ -6,6 +6,7 @@
 # Dependencies
 node_modules
 pnpm-store
+.pnpm-store
 npm-debug.log
 yarn-error.log
 pnpm-debug.log
@@ -19,10 +20,15 @@ build
 
 # Environment files (secrets should never be in build context)
 .env
-.env.local
-.env.*.local
-.env.production.local
-.env.development.local
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Tooling, mockups and local build metadata
+.claude
+mockup
+tsconfig.tsbuildinfo
 
 # IDE & Editor
 .vscode
