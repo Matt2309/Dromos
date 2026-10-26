@@ -18,10 +18,15 @@ export function BackButton({
         const referrer = document.referrer;
         const currentOrigin = window.location.origin;
 
-        if (!referrer || !referrer.startsWith(currentOrigin)) {
-            router.push("/");
-        } else {
+        // A tab opened via target="_blank" (every legal link shown to a
+        // logged-out user) has a same-origin referrer but no history entry to
+        // go back to, so router.back() would be a no-op.
+        const hasHistory = window.history.length > 1;
+
+        if (hasHistory && referrer.startsWith(currentOrigin)) {
             router.back();
+        } else {
+            router.push("/");
         }
     };
 
