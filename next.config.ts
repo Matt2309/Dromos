@@ -3,13 +3,16 @@ import type { NextConfig } from "next";
 const isProd = process.env.NODE_ENV === "production";
 
 // Third parties the app really loads: Google Tag Manager (app/layout.tsx),
-// which in turn loads GA4 and the Cookiebot consent banner. Anything GTM
+// which in turn loads GA4 and the Cookiebot consent banner, plus the
+// Cloudflare Web Analytics beacon. Anything GTM
 // starts loading later has to be added here, or the browser will block it.
 const GTM_SCRIPT_SRC = [
 	"https://www.googletagmanager.com",
 	"https://*.google-analytics.com",
 	"https://consent.cookiebot.com",
 	"https://consentcdn.cookiebot.com",
+	// Cloudflare Web Analytics beacon, injected by Cloudflare at the edge.
+	"https://static.cloudflareinsights.com",
 ];
 const GTM_CONNECT_SRC = [
 	"https://www.googletagmanager.com",
@@ -17,6 +20,7 @@ const GTM_CONNECT_SRC = [
 	"https://*.analytics.google.com",
 	"https://consent.cookiebot.com",
 	"https://consentcdn.cookiebot.com",
+	"https://cloudflareinsights.com",
 ];
 
 // 'unsafe-inline' in script-src is required by the inline consent-mode
