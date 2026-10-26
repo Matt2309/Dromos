@@ -15,12 +15,23 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: purge-raw-data
+  cancel-in-progress: false
+
 jobs:
   purge:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Call purge endpoint
+        # Secrets go through env, never interpolated into the script body, so
+        # they can't be injected into the shell and stay masked in the logs.
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
+          set -euo pipefail
           curl --fail-with-body -sS --max-time 60 \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.APP_BASE_URL }}/api/cron/purge-raw-data"
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_BASE_URL}/api/cron/purge-raw-data"
